@@ -1,0 +1,5 @@
+Mandantennummer;Name;Erkennungsmerkmale;Soll-Belege pro Monat
+10001;Bäckerei Sonnenschein GmbH;Bäckerei Sonnenschein|Sonnenschein GmbH|Mandant 10001;Kontoauszug|Kassenbericht|Lohnabrechnung
+10002;Malerbetrieb Pinselstrich;Pinselstrich|Mandant 10002;Kontoauszug|Eingangsrechnung|Lohnabrechnung
+10003;Praxis Dr. Muster;Dr. Muster|Praxis Muster|Mandant 10003;Kontoauszug|Kreditkartenabrechnung
+10004;Café Testlauf UG;Café Testlauf|Testlauf UG|Mandant 10004;Kontoauszug|Kassenbericht|Eingangsrechnung
