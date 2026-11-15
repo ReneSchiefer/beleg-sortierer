@@ -6,7 +6,9 @@ und für einen Monat eine **Liste fehlender Belege** erstellt.
 > Alle Daten in diesem Projekt sind **fiktive Testdaten**. Es enthält keine echten Mandanten- oder Kundendaten.
 
 ## Live-Demo
-Die Demo läuft im Browser und braucht keine Installation (Link folgt, sobald GitHub Pages aktiv ist).
+**Zur Live-Demo: https://reneschiefer.github.io/beleg-sortierer/**
+
+Die Demo läuft im Browser und braucht keine Installation.
 Sie liegt im Ordner `docs/`. Nach Änderungen an den Testdaten: `python3 demo_daten_exportieren.py`.
 
 ## Problem
