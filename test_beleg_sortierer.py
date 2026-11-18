@@ -3,10 +3,22 @@
 Aufruf:  python3 -m unittest -v
 """
 
+import json
+import shutil
+import subprocess
 import unittest
 
 import beleg_sortierer as bs
+import demo_daten_exportieren
 import testdaten_erzeugen
+
+
+def browser_test_moeglich() -> bool:
+    """Test 7b braucht Node.js und Playwright (ein Werkzeug, das einen Browser fernsteuert)."""
+    if not shutil.which("node"):
+        return False
+    probe = subprocess.run(["node", "-e", "require('playwright')"], capture_output=True)
+    return probe.returncode == 0
 
 
 class TestBelegSortierer(unittest.TestCase):
@@ -42,6 +54,29 @@ class TestBelegSortierer(unittest.TestCase):
                  {"art": "Eingangsrechnung", "stichwoerter": ["Rechnung"]}]
         art, _ = bs.erkenne_belegart("Kreditkartenabrechnung Oktober", arten)
         self.assertEqual(art, "Kreditkartenabrechnung")
+
+
+    # --- Test 7: Web-Demo und Python-Tool müssen dasselbe Ergebnis liefern ---------------
+
+    def test_7a_demo_hat_aktuelle_daten(self):
+        """Die Demo liest docs/daten.js. Diese Datei muss zu einstellungen/ und eingang/ passen.
+        Schlägt fehl, wenn jemand vergessen hat: python3 demo_daten_exportieren.py"""
+        text = (bs.ORDNER / "docs" / "daten.js").read_text(encoding="utf-8")
+        json_teil = text.split("const DATEN = ", 1)[1].rstrip().rstrip(";")
+        self.assertEqual(json.loads(json_teil), demo_daten_exportieren.erzeuge_daten())
+
+    @unittest.skipUnless(browser_test_moeglich(), "kein Node.js/Playwright – Browser-Test übersprungen")
+    def test_7b_demo_sortiert_wie_python(self):
+        """Ein unsichtbarer Browser öffnet die Demo und sortiert. Jede Zeile muss gleich sein."""
+        monate = ["2026-10", "2026-09"]
+        lauf = subprocess.run(["node", str(bs.ORDNER / "demo_im_browser.js"), *monate],
+                              capture_output=True, text=True, check=True)
+        demo = json.loads(lauf.stdout)
+        self.assertEqual(demo["fehler"], [], "JavaScript-Fehler in der Demo")
+        for monat in monate:
+            python = [[z["Datei"], z["Mandant"], z["Belegart"], z["Monat"], z["Status"], z["Begründung"]]
+                      for z in bs.verarbeite(monat)["protokoll"]]
+            self.assertEqual(demo["ergebnis"][monat], python, monat)
 
 
 if __name__ == "__main__":
