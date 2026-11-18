@@ -9,8 +9,10 @@ import json
 import beleg_sortierer as bs
 
 
-def main() -> None:
-    daten = {
+def erzeuge_daten() -> dict:
+    """Sammelt Einstellungen und Testbelege – genau das, was die Demo braucht.
+    Der Test 7 nutzt diese Funktion, um zu prüfen, ob docs/daten.js aktuell ist."""
+    return {
         "mandanten": bs.lade_mandanten(),
         "belegarten": bs.lade_belegarten(),
         "belege": [
@@ -18,6 +20,10 @@ def main() -> None:
             for d in sorted(bs.EINGANG.glob("*.txt"))
         ],
     }
+
+
+def main() -> None:
+    daten = erzeuge_daten()
     ziel = bs.ORDNER / "docs" / "daten.js"
     ziel.parent.mkdir(exist_ok=True)
     ziel.write_text(

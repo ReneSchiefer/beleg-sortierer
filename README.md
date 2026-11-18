@@ -36,6 +36,10 @@ python3 testdaten_erzeugen.py              # fiktive Testbelege erzeugen
 python3 beleg_sortierer.py --monat 2026-10 # sortieren + Fehlliste
 python3 -m unittest -v                     # automatische Tests
 ```
+Die Tests prüfen auch, ob die **Web-Demo dasselbe Ergebnis liefert wie das Python-Tool**:
+- Test 7a: `docs/daten.js` passt zu `einstellungen/` und `eingang/` (läuft immer).
+- Test 7b: Ein unsichtbarer Browser öffnet die Demo, sortiert und vergleicht jede Zeile mit Python.
+  Braucht Node.js und Playwright – fehlen sie, wird dieser eine Test übersprungen.
 Du brauchst nur Python 3.10 oder neuer. Weitere Pakete sind nicht nötig.
 
 ## Grenzen (ehrlich)
