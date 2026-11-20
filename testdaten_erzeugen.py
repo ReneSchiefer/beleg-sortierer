@@ -3,8 +3,9 @@
 Alle Namen, Nummern und Beträge sind erfunden. Es gibt hier keine echten
 Kunden- oder Mandantendaten.
 
-Die Belege sind einfache Textdateien. Sie stehen für Belege, die schon
+Die meisten Belege sind einfache Textdateien. Sie stehen für Belege, die schon
 eingescannt und per Texterkennung (OCR) gelesen wurden.
+Dazu kommen einige E-Rechnungen (.xml) – vereinfacht, im Aufbau einer XRechnung.
 Die Dateinamen sind absichtlich unordentlich (scan_0003.txt, IMG_2041.txt ...),
 so wie sie in der Praxis per Mail oder Scanner ankommen. Das Tool erkennt
 Mandant und Belegart deshalb am INHALT, nicht am Dateinamen.
@@ -81,6 +82,61 @@ Datum: 20.10.2026""",
 DUPLIKATE = {"scan_0001_kopie.txt": "scan_0001.txt"}
 
 
+# ---------------------------------------------------------------------------
+# E-Rechnungen (Testdaten): vereinfachte Rechnungen im Aufbau einer XRechnung (Format UBL).
+# Eine echte XRechnung hat noch viele weitere Pflichtfelder – hier nur das, was der
+# Sortierer braucht. Alles erfunden.
+# ---------------------------------------------------------------------------
+E_RECHNUNG_VORLAGE = """<?xml version="1.0" encoding="UTF-8"?>
+<!-- FIKTIVE TESTDATEN – KEINE ECHTE RECHNUNG ({hinweis}) -->
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>{nummer}</cbc:ID>
+  <cbc:IssueDate>{datum}</cbc:IssueDate>
+  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyName><cbc:Name>{verkaeufer}</cbc:Name></cac:PartyName>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyName><cbc:Name>{kaeufer}</cbc:Name></cac:PartyName>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="EUR">{steuer}</cbc:TaxAmount>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:TaxExclusiveAmount currencyID="EUR">{netto}</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="EUR">{brutto}</cbc:TaxInclusiveAmount>
+  </cac:LegalMonetaryTotal>
+</Invoice>
+"""
+
+E_RECHNUNGEN = {
+    # Normalfall: alles stimmt (500 + 95 = 595)
+    "erechnung_farben.xml": dict(hinweis="Normalfall", nummer="R-2026-0815", datum="2026-10-14",
+        verkaeufer="Farbenhandel Musterstadt", kaeufer="Malerbetrieb Pinselstrich",
+        netto="500.00", steuer="95.00", brutto="595.00"),
+    # Rechenfehler: 200 + 14 ist 214, nicht 241 → muss nach "prüfen"
+    "erechnung_kaffee.xml": dict(hinweis="Rechenfehler", nummer="KR-2026-77", datum="2026-10-20",
+        verkaeufer="Kaffeerösterei Beispiel", kaeufer="Café Testlauf UG",
+        netto="200.00", steuer="14.00", brutto="241.00"),
+    # Unbekannter Käufer: kein Mandant der Kanzlei → nicht raten, "prüfen"
+    "erechnung_unbekannt.xml": dict(hinweis="unbekannter Käufer", nummer="2026-1001", datum="2026-10-05",
+        verkaeufer="Bürobedarf Muster", kaeufer="Firma Irgendwer GmbH",
+        netto="80.00", steuer="15.20", brutto="95.20"),
+    # Dieselbe Rechnung noch einmal geschickt (gleiche Nummer, gleicher Lieferant) → Duplikat.
+    # Der Inhalt ist nicht Byte für Byte gleich (anderer Hinweis), deshalb reicht der
+    # Fingerabdruck allein hier nicht – die Rechnungsnummer verrät es.
+    "erechnung_farben_nochmal.xml": dict(hinweis="erneut geschickt", nummer="R-2026-0815", datum="2026-10-14",
+        verkaeufer="Farbenhandel Musterstadt", kaeufer="Malerbetrieb Pinselstrich",
+        netto="500.00", steuer="95.00", brutto="595.00"),
+}
+
+
 def main() -> None:
     eingang = Path(__file__).parent / "eingang"
     if eingang.exists():
@@ -91,8 +147,11 @@ def main() -> None:
         (eingang / name).write_text(f"{HINWEIS}\n{text}\n", encoding="utf-8")
     for kopie, original in DUPLIKATE.items():
         shutil.copy(eingang / original, eingang / kopie)
+    for name, werte in E_RECHNUNGEN.items():
+        (eingang / name).write_text(E_RECHNUNG_VORLAGE.format(**werte), encoding="utf-8")
 
-    print(f"{len(BELEGE) + len(DUPLIKATE)} fiktive Testbelege in {eingang} erzeugt.")
+    anzahl = len(BELEGE) + len(DUPLIKATE) + len(E_RECHNUNGEN)
+    print(f"{anzahl} fiktive Testbelege in {eingang} erzeugt (davon {len(E_RECHNUNGEN)} E-Rechnungen).")
 
 
 if __name__ == "__main__":
