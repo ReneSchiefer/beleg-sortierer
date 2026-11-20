@@ -10,6 +10,7 @@ import unittest
 
 import beleg_sortierer as bs
 import demo_daten_exportieren
+import erechnung
 import testdaten_erzeugen
 
 
@@ -77,6 +78,22 @@ class TestBelegSortierer(unittest.TestCase):
             python = [[z["Datei"], z["Mandant"], z["Belegart"], z["Monat"], z["Status"], z["Begründung"]]
                       for z in bs.verarbeite(monat)["protokoll"]]
             self.assertEqual(demo["ergebnis"][monat], python, monat)
+
+
+    # --- E-Rechnung (Modul erechnung.py) --------------------------------------------------
+
+    def test_erechnung_wird_richtig_gelesen(self):
+        """Alle Kästchen der Normalfall-Rechnung werden genau abgelesen."""
+        werte = erechnung.lese_e_rechnung(bs.EINGANG / "erechnung_farben.xml")
+        self.assertEqual(werte, {
+            "nummer": "R-2026-0815", "datum": "2026-10-14",
+            "verkaeufer": "Farbenhandel Musterstadt", "kaeufer": "Malerbetrieb Pinselstrich",
+            "netto": "500.00", "steuer": "95.00", "brutto": "595.00",
+        })
+
+    def test_erechnung_erkannt_textbeleg_nicht(self):
+        self.assertTrue(erechnung.ist_e_rechnung(bs.EINGANG / "erechnung_farben.xml"))
+        self.assertFalse(erechnung.ist_e_rechnung(bs.EINGANG / "scan_0001.txt"))
 
 
 if __name__ == "__main__":
