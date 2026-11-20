@@ -5,7 +5,8 @@ Aufruf:   python3 beleg_sortierer.py --monat 2026-10
 
 Ablauf in 5 Schritten:
   1. Einstellungen lesen   (welche Mandanten, welche Belegarten, was wird erwartet)
-  2. Jeden Beleg erkennen  (Mandant, Belegart, Datum – anhand des Inhalts)
+  2. Jeden Beleg erkennen  (Mandant, Belegart, Datum – anhand des Inhalts;
+                           E-Rechnungen: Kästchen ablesen und nachrechnen, Modul erechnung.py)
   3. Kopieren              (in ausgabe/sortiert/... oder ausgabe/pruefen/...)
   4. Soll mit Ist vergleichen -> Liste fehlender Belege
   5. Berichte schreiben    (CSV für Excel + HTML-Übersicht + Erinnerungs-ENTWÜRFE)
@@ -25,6 +26,9 @@ import re
 import shutil
 from datetime import datetime
 from pathlib import Path
+import xml.etree.ElementTree as ET
+
+import erechnung
 
 ORDNER = Path(__file__).parent
 EINGANG = ORDNER / "eingang"
@@ -106,6 +110,53 @@ def pruefsumme(datei: Path) -> str:
     return hashlib.sha256(datei.read_bytes()).hexdigest()
 
 
+def entscheide_textbeleg(datei: Path, mandanten, belegarten):
+    """Textbeleg: Mandant, Belegart und Monat über Stichwörter suchen (wie bisher)."""
+    text = datei.read_text(encoding="utf-8")
+    mandant, grund_m = erkenne_mandant(text, mandanten)
+    art, grund_a = erkenne_belegart(text, belegarten)
+    beleg_monat, grund_d = erkenne_monat(text)
+    if mandant is None:
+        status, grund = "Prüfen", grund_m
+    elif art is None:
+        status, grund = "Prüfen", grund_a
+    elif beleg_monat is None:
+        status, grund = "Prüfen", grund_d
+    else:
+        status, grund = "Sortiert", f"{grund_m}; {grund_a}; {grund_d}"
+    return mandant, art, beleg_monat, status, grund
+
+
+def entscheide_e_rechnung(datei: Path, mandanten, rechnungen: dict):
+    """E-Rechnung: Kästchen ablesen statt suchen – dann prüfen und zuordnen.
+    Reihenfolge: lesbar? → vollständig und richtig gerechnet? → Mandant (= Käufer)? → doppelt?"""
+    art = "Eingangsrechnung"   # Käufer ist unser Mandant → er hat eingekauft
+    try:
+        werte = erechnung.lese_e_rechnung(datei)
+    except ET.ParseError:
+        return None, art, None, "Prüfen", "E-Rechnung nicht lesbar (kein gültiges XML)"
+    beleg_monat = erechnung.monat_aus_datum(werte["datum"])
+
+    fehler = erechnung.pruefe_e_rechnung(werte)
+    if fehler:
+        return None, art, beleg_monat, "Prüfen", fehler
+
+    # Nur im Fach "Käufer" nach dem Mandanten suchen – der Verkäufer ist der Lieferant
+    mandant, grund_m = erkenne_mandant(werte["kaeufer"], mandanten)
+    if mandant is None:
+        return None, art, beleg_monat, "Prüfen", f"E-Rechnung: Käufer '{werte['kaeufer']}' – {grund_m}"
+
+    schluessel = (werte["verkaeufer"], werte["nummer"])
+    if schluessel in rechnungen:
+        return (mandant, art, beleg_monat, "Duplikat",
+                f"gleiche Rechnungsnummer {werte['nummer']} von {werte['verkaeufer']} wie {rechnungen[schluessel]}")
+    rechnungen[schluessel] = datei.name
+
+    grund = (f"E-Rechnung: {grund_m} (Käufer); Rechnung {werte['nummer']} rechnet "
+             f"({werte['netto']} + {werte['steuer']} = {werte['brutto']}); Datum {werte['datum']}")
+    return mandant, art, beleg_monat, "Sortiert", grund
+
+
 # ---------------------------------------------------------------------------
 # Hauptablauf
 # ---------------------------------------------------------------------------
@@ -121,26 +172,22 @@ def verarbeite(monat: str) -> dict:
 
     protokoll = []      # eine Zeile pro Beleg: was wurde erkannt und warum
     gesehen = {}        # Prüfsumme -> Dateiname (für Duplikate)
+    rechnungen = {}     # (Lieferant, Rechnungsnummer) -> Dateiname (Duplikate bei E-Rechnungen)
     eingegangen = set() # (Mandantennummer, Belegart) im gewählten Monat
 
-    for datei in sorted(EINGANG.glob("*.txt")):
-        text = datei.read_text(encoding="utf-8")
-        mandant, grund_m = erkenne_mandant(text, mandanten)
-        art, grund_a = erkenne_belegart(text, belegarten)
-        beleg_monat, grund_d = erkenne_monat(text)
-        summe = pruefsumme(datei)
+    # Textbelege (.txt) und E-Rechnungen (.xml), sortiert nach Dateiname
+    alle = list(EINGANG.glob("*.txt")) + list(EINGANG.glob("*.xml"))
+    for datei in sorted(alle, key=lambda d: d.name):
+        # Schritt 2 + 3: erkennen und entscheiden – E-Rechnung oder Textbeleg?
+        if erechnung.ist_e_rechnung(datei):
+            mandant, art, beleg_monat, status, grund = entscheide_e_rechnung(datei, mandanten, rechnungen)
+        else:
+            mandant, art, beleg_monat, status, grund = entscheide_textbeleg(datei, mandanten, belegarten)
 
-        # Schritt 3: entscheiden, wohin der Beleg kommt
+        # Genau gleicher Inhalt wie ein früherer Beleg (Fingerabdruck)? → Duplikat
+        summe = pruefsumme(datei)
         if summe in gesehen:
             status, grund = "Duplikat", f"gleicher Inhalt wie {gesehen[summe]}"
-        elif mandant is None:
-            status, grund = "Prüfen", grund_m
-        elif art is None:
-            status, grund = "Prüfen", grund_a
-        elif beleg_monat is None:
-            status, grund = "Prüfen", grund_d
-        else:
-            status, grund = "Sortiert", f"{grund_m}; {grund_a}; {grund_d}"
         gesehen.setdefault(summe, datei.name)
 
         if status == "Sortiert":

@@ -48,3 +48,34 @@ def lese_e_rechnung(datei: Path) -> dict:
         else:
             werte[name] = None                   # Kästchen fehlt oder ist leer
     return werte
+
+
+def betrag_in_cent(text: str) -> int:
+    """Rechnet einen Betrag wie "595.00" in Cent um (59500).
+    So rechnen wir nur mit ganzen Zahlen und es entstehen keine Rundungsfehler."""
+    return round(float(text) * 100)
+
+
+def pruefe_e_rechnung(werte: dict):
+    """Automatische Kontrolle einer E-Rechnung.
+    Gibt den Grund zurück, wenn etwas nicht stimmt – sonst None (= alles in Ordnung)."""
+    # 1. Sind alle Kästchen ausgefüllt?
+    fehlend = [name for name, wert in werte.items() if not wert]
+    if fehlend:
+        return "E-Rechnung: Angabe fehlt (" + ", ".join(fehlend) + ")"
+    # 2. Sind die Beträge wirklich Zahlen?
+    try:
+        netto, steuer, brutto = (betrag_in_cent(werte[k]) for k in ("netto", "steuer", "brutto"))
+    except ValueError:
+        return "E-Rechnung: Betrag ist keine Zahl"
+    # 3. Rechnet die Rechnung richtig? Netto + Steuer muss Brutto ergeben.
+    if netto + steuer != brutto:
+        return f"E-Rechnung rechnet nicht: {werte['netto']} + {werte['steuer']} ist nicht {werte['brutto']}"
+    return None
+
+
+def monat_aus_datum(datum: str):
+    """Aus "2026-10-14" wird der Monat "2026-10". Anderes Format → None."""
+    if datum and len(datum) == 10 and datum[4] == "-" and datum[7] == "-":
+        return datum[:7]
+    return None

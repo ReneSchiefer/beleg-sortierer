@@ -17,7 +17,8 @@ def erzeuge_daten() -> dict:
         "belegarten": bs.lade_belegarten(),
         "belege": [
             {"name": d.name, "text": d.read_text(encoding="utf-8")}
-            for d in sorted(bs.EINGANG.glob("*.txt"))
+            for d in sorted(list(bs.EINGANG.glob("*.txt")) + list(bs.EINGANG.glob("*.xml")),
+                            key=lambda d: d.name)
         ],
     }
 
