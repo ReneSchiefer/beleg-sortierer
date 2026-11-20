@@ -81,7 +81,7 @@ footer{margin-top:3rem;font-size:.85rem;color:var(--leise);border-top:1px solid 
 
   <ol class="schritte">
     <li><b>Einstellungen:</b> Mandanten, Erkennungsmerkmale und erwartete Belege pro Monat</li>
-    <li><b>Erkennen:</b> Mandant, Belegart und Datum aus dem Inhalt, nicht aus dem Dateinamen</li>
+    <li><b>Erkennen:</b> Mandant, Belegart und Datum aus dem Inhalt, nicht aus dem Dateinamen. <b>E-Rechnungen</b> (.xml): Kästchen genau ablesen und nachrechnen</li>
     <li><b>Ablegen:</b> eindeutige Belege sortieren, Unklares zur Prüfung, Duplikate aussortieren</li>
     <li><b>Abgleich:</b> Soll gegen Ist ergibt die Liste fehlender Belege</li>
     <li><b>Entwürfe:</b> Erinnerungen an Mandanten, die ein Mensch vor dem Versand prüft</li>
@@ -136,7 +136,7 @@ Datum: 31.10.2026</textarea>
     <span id="artenListe"></span></p>
 
   <footer>
-    <p><b>Grenzen:</b> Die Belege sind hier Textdateien, also so, als wären sie schon per Texterkennung (OCR) gelesen.
+    <p><b>Grenzen:</b> Die meisten Belege sind hier Textdateien, also so, als wären sie schon per Texterkennung (OCR) gelesen. Die E-Rechnungen sind vereinfacht (Aufbau einer XRechnung im Format UBL, nicht alle Pflichtfelder); das Format ZUGFeRD/CII wird noch nicht gelesen.
       Die Erkennung arbeitet mit Stichwörtern. Eingangs- und Ausgangsrechnungen werden noch nicht unterschieden.</p>
     <p>Die Web-Demo bildet die Logik des Python-Tools im Browser nach. Beide nutzen dieselben Einstellungen und Testdaten.
       Alle Namen, Nummern und Beträge sind erfunden.</p>
@@ -178,18 +178,78 @@ function erkenneMonat(text){
   return [`${m[3]}-${m[2]}`, `Datum ${m[1]}.${m[2]}.${m[3]}`];
 }
 
+// ---------- E-Rechnung (wie in erechnung.py) ----------
+// cbc: = ein Glas (einzelner Wert), cac: = ein Fach (Gruppe). Feste Regeln, keine KI.
+const NAMENSRAUM = {
+  cbc: "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2",
+  cac: "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2",
+};
+const FELDER = {
+  nummer: "cbc:ID",
+  datum: "cbc:IssueDate",
+  verkaeufer: "cac:AccountingSupplierParty/cac:Party/cac:PartyName/cbc:Name",
+  kaeufer: "cac:AccountingCustomerParty/cac:Party/cac:PartyName/cbc:Name",
+  netto: "cac:LegalMonetaryTotal/cbc:TaxExclusiveAmount",
+  steuer: "cac:TaxTotal/cbc:TaxAmount",
+  brutto: "cac:LegalMonetaryTotal/cbc:TaxInclusiveAmount",
+};
+const istERechnung = name => name.toLowerCase().endsWith(".xml");
+function leseERechnung(text){
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length) return null;   // kein gültiges XML
+  const werte = {};
+  for (const [name, weg] of Object.entries(FELDER)){
+    let knoten = doc.documentElement;                                 // der Schrank
+    for (const schritt of weg.split("/")){                            // Fach für Fach
+      const [vorsilbe, etikett] = schritt.split(":");
+      knoten = knoten && [...knoten.children].find(k => k.namespaceURI === NAMENSRAUM[vorsilbe] && k.localName === etikett);
+    }
+    const inhalt = knoten ? knoten.textContent.trim() : "";
+    werte[name] = inhalt || null;                                     // fehlt → null, nichts erfinden
+  }
+  return werte;
+}
+const betragInCent = text => Math.round(Number(text) * 100);
+function pruefeERechnung(w){
+  const fehlend = Object.keys(w).filter(k => !w[k]);
+  if (fehlend.length) return `E-Rechnung: Angabe fehlt (${fehlend.join(", ")})`;
+  const [netto, steuer, brutto] = ["netto", "steuer", "brutto"].map(k => betragInCent(w[k]));
+  if ([netto, steuer, brutto].some(Number.isNaN)) return "E-Rechnung: Betrag ist keine Zahl";
+  if (netto + steuer !== brutto) return `E-Rechnung rechnet nicht: ${w.netto} + ${w.steuer} ist nicht ${w.brutto}`;
+  return null;
+}
+const monatAusDatum = d => (d && d.length === 10 && d[4] === "-" && d[7] === "-") ? d.slice(0, 7) : null;
+
+function entscheideTextbeleg(b){
+  const [mandant, gm] = erkenneMandant(b.text);
+  const [art, ga] = erkenneBelegart(b.text);
+  const [bm, gd] = erkenneMonat(b.text);
+  if (!mandant) return [mandant, art, bm, "Prüfen", gm];
+  if (!art) return [mandant, art, bm, "Prüfen", ga];
+  if (!bm) return [mandant, art, bm, "Prüfen", gd];
+  return [mandant, art, bm, "Sortiert", `${gm}; ${ga}; ${gd}`];
+}
+function entscheideERechnung(b, rechnungen){
+  const art = "Eingangsrechnung";
+  const w = leseERechnung(b.text);
+  if (!w) return [null, art, null, "Prüfen", "E-Rechnung nicht lesbar (kein gültiges XML)"];
+  const bm = monatAusDatum(w.datum);
+  const fehler = pruefeERechnung(w);
+  if (fehler) return [null, art, bm, "Prüfen", fehler];
+  const [mandant, gm] = erkenneMandant(w.kaeufer);          // nur im Fach "Käufer" suchen
+  if (!mandant) return [null, art, bm, "Prüfen", `E-Rechnung: Käufer '${w.kaeufer}' – ${gm}`];
+  const schluessel = w.verkaeufer + "|" + w.nummer;
+  if (rechnungen.has(schluessel))
+    return [mandant, art, bm, "Duplikat", `gleiche Rechnungsnummer ${w.nummer} von ${w.verkaeufer} wie ${rechnungen.get(schluessel)}`];
+  rechnungen.set(schluessel, b.name);
+  return [mandant, art, bm, "Sortiert", `E-Rechnung: ${gm} (Käufer); Rechnung ${w.nummer} rechnet (${w.netto} + ${w.steuer} = ${w.brutto}); Datum ${w.datum}`];
+}
+
 function verarbeite(monat){
-  const protokoll = [], gesehen = new Map(), eingegangen = new Set(), ablage = {};
+  const protokoll = [], gesehen = new Map(), rechnungen = new Map(), eingegangen = new Set(), ablage = {};
   for (const b of belege.filter(b => b.aktiv).sort((a, c) => a.name < c.name ? -1 : 1)){
-    const [mandant, gm] = erkenneMandant(b.text);
-    const [art, ga] = erkenneBelegart(b.text);
-    const [bm, gd] = erkenneMonat(b.text);
-    let status, grund;
+    let [mandant, art, bm, status, grund] = istERechnung(b.name) ? entscheideERechnung(b, rechnungen) : entscheideTextbeleg(b);
     if (gesehen.has(b.text)) { status = "Duplikat"; grund = `gleicher Inhalt wie ${gesehen.get(b.text)}`; }
-    else if (!mandant) { status = "Prüfen"; grund = gm; }
-    else if (!art) { status = "Prüfen"; grund = ga; }
-    else if (!bm) { status = "Prüfen"; grund = gd; }
-    else { status = "Sortiert"; grund = `${gm}; ${ga}; ${gd}`; }
     if (!gesehen.has(b.text)) gesehen.set(b.text, b.name);
     if (status === "Sortiert"){
       const pfad = [`${mandant.nr}_${mandant.name}`, bm, art];
@@ -260,7 +320,15 @@ $("eingang").addEventListener("change", ev => {
 });
 $("eingang").addEventListener("click", ev => {
   const i = ev.target.dataset.zeige; if (i === undefined) return;
-  $("anzeigeTitel").textContent = belege[i].name; $("anzeigeText").textContent = belege[i].text; $("anzeige").showModal();
+  const b = belege[i];
+  let anzeige = b.text;
+  if (istERechnung(b.name)){                 // E-Rechnung: erst die abgelesenen Kästchen zeigen
+    const w = leseERechnung(b.text);
+    anzeige = w ? "Abgelesene Kästchen:\n" + Object.entries(w).map(([k, v]) => `  ${k.padEnd(11)} ${v ?? "(fehlt)"}`).join("\n")
+                  + "\n\n--- Original (XML) ---\n" + b.text
+                : "Kein gültiges XML.\n\n" + b.text;
+  }
+  $("anzeigeTitel").textContent = b.name; $("anzeigeText").textContent = anzeige; $("anzeige").showModal();
 });
 $("los").addEventListener("click", () => {
   gestartet = true; $("ergebnis").hidden = false; auswerten();

@@ -30,7 +30,7 @@ class TestBelegSortierer(unittest.TestCase):
         cls.status = {z["Datei"]: z["Status"] for z in cls.e["protokoll"]}
 
     def test_alle_belege_verarbeitet(self):
-        self.assertEqual(len(self.e["protokoll"]), 13)
+        self.assertEqual(len(self.e["protokoll"]), 17)  # 13 Textbelege + 4 E-Rechnungen
 
     def test_fehlende_belege_richtig(self):
         fehlend = {(f["Mandant"], f["Fehlender Beleg"]) for f in self.e["fehlend"]}
@@ -49,6 +49,7 @@ class TestBelegSortierer(unittest.TestCase):
 
     def test_eingang_bleibt_unveraendert(self):
         self.assertEqual(len(list(bs.EINGANG.glob("*.txt"))), 13)
+        self.assertEqual(len(list(bs.EINGANG.glob("*.xml"))), 4)
 
     def test_kreditkarte_ist_keine_rechnung(self):
         arten = [{"art": "Kreditkartenabrechnung", "stichwoerter": ["Kreditkartenabrechnung"]},
@@ -90,6 +91,27 @@ class TestBelegSortierer(unittest.TestCase):
             "verkaeufer": "Farbenhandel Musterstadt", "kaeufer": "Malerbetrieb Pinselstrich",
             "netto": "500.00", "steuer": "95.00", "brutto": "595.00",
         })
+
+    def test_erechnung_normalfall_wird_sortiert(self):
+        zeile = next(z for z in self.e["protokoll"] if z["Datei"] == "erechnung_farben.xml")
+        self.assertEqual((zeile["Status"], zeile["Mandant"], zeile["Belegart"], zeile["Monat"]),
+                         ("Sortiert", "10002 Malerbetrieb Pinselstrich", "Eingangsrechnung", "2026-10"))
+
+    def test_erechnung_mit_rechenfehler_geht_zum_menschen(self):
+        self.assertEqual(self.status["erechnung_kaffee.xml"], "Prüfen")
+
+    def test_erechnung_unbekannter_kaeufer_wird_nicht_geraten(self):
+        self.assertEqual(self.status["erechnung_unbekannt.xml"], "Prüfen")
+
+    def test_erechnung_gleiche_rechnungsnummer_ist_duplikat(self):
+        self.assertEqual(self.status["erechnung_farben_nochmal.xml"], "Duplikat")
+
+    def test_pruefung_findet_fehlende_angabe(self):
+        werte = {"nummer": None, "datum": "2026-10-01", "verkaeufer": "A", "kaeufer": "B",
+                 "netto": "10.00", "steuer": "1.90", "brutto": "11.90"}
+        self.assertIn("Angabe fehlt (nummer)", erechnung.pruefe_e_rechnung(werte))
+        werte["nummer"] = "X-1"
+        self.assertIsNone(erechnung.pruefe_e_rechnung(werte))   # jetzt ist alles in Ordnung
 
     def test_erechnung_erkannt_textbeleg_nicht(self):
         self.assertTrue(erechnung.ist_e_rechnung(bs.EINGANG / "erechnung_farben.xml"))
