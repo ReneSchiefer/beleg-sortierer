@@ -74,6 +74,11 @@ def pruefe_e_rechnung(werte: dict):
     return None
 
 
+def betrag_deutsch(text: str) -> str:
+    """Aus "595.00" wird "595,00" – so liest das deutsche Excel den Betrag richtig."""
+    return text.replace(".", ",") if text else ""
+
+
 def monat_aus_datum(datum: str):
     """Aus "2026-10-14" wird der Monat "2026-10". Anderes Format → None."""
     if datum and len(datum) == 10 and datum[4] == "-" and datum[7] == "-":

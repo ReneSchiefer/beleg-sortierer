@@ -76,9 +76,13 @@ class TestBelegSortierer(unittest.TestCase):
         demo = json.loads(lauf.stdout)
         self.assertEqual(demo["fehler"], [], "JavaScript-Fehler in der Demo")
         for monat in monate:
+            e = bs.verarbeite(monat)
             python = [[z["Datei"], z["Mandant"], z["Belegart"], z["Monat"], z["Status"], z["Begründung"]]
-                      for z in bs.verarbeite(monat)["protokoll"]]
-            self.assertEqual(demo["ergebnis"][monat], python, monat)
+                      for z in e["protokoll"]]
+            self.assertEqual(demo["ergebnis"][monat]["protokoll"], python, monat)
+            # auch die Rechnungsliste muss in Demo und Python gleich sein
+            python_liste = [list(z.values()) for z in e["rechnungsliste"]]
+            self.assertEqual(demo["ergebnis"][monat]["rechnungen"], python_liste, monat)
 
 
     # --- E-Rechnung (Modul erechnung.py) --------------------------------------------------
@@ -105,6 +109,14 @@ class TestBelegSortierer(unittest.TestCase):
 
     def test_erechnung_gleiche_rechnungsnummer_ist_duplikat(self):
         self.assertEqual(self.status["erechnung_farben_nochmal.xml"], "Duplikat")
+
+    def test_rechnungsliste_mit_allen_e_rechnungen(self):
+        liste = {z["Datei"]: z for z in self.e["rechnungsliste"]}
+        self.assertEqual(len(liste), 4)
+        farben = liste["erechnung_farben.xml"]
+        self.assertEqual((farben["Lieferant"], farben["Netto"], farben["Steuer"], farben["Brutto"], farben["Status"]),
+                         ("Farbenhandel Musterstadt", "500,00", "95,00", "595,00", "Sortiert"))
+        self.assertEqual(liste["erechnung_kaffee.xml"]["Status"], "Prüfen")   # Rechenfehler bleibt sichtbar
 
     def test_pruefung_findet_fehlende_angabe(self):
         werte = {"nummer": None, "datum": "2026-10-01", "verkaeufer": "A", "kaeufer": "B",
