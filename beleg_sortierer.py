@@ -9,7 +9,8 @@ Ablauf in 5 Schritten:
                            E-Rechnungen: Kästchen ablesen und nachrechnen, Modul erechnung.py)
   3. Kopieren              (in ausgabe/sortiert/... oder ausgabe/pruefen/...)
   4. Soll mit Ist vergleichen -> Liste fehlender Belege
-  5. Berichte schreiben    (CSV für Excel + HTML-Übersicht + Erinnerungs-ENTWÜRFE)
+  5. Berichte schreiben    (CSV für Excel + HTML-Übersicht + Erinnerungs-ENTWÜRFE
+                           + Rechnungsliste aller E-Rechnungen)
 
 Sicherheitsregeln im Code:
   - Der Ordner 'eingang/' wird nie verändert. Das Tool KOPIERT nur.
@@ -157,6 +158,26 @@ def entscheide_e_rechnung(datei: Path, mandanten, rechnungen: dict):
     return mandant, art, beleg_monat, "Sortiert", grund
 
 
+def rechnungszeile(datei: Path, eintrag: dict):
+    """Eine Zeile für die Rechnungsliste: die abgelesenen Kästchen plus Mandant und Status.
+    Nicht lesbare Dateien kommen nicht in die Liste (sie stehen im Protokoll)."""
+    try:
+        w = erechnung.lese_e_rechnung(datei)
+    except ET.ParseError:
+        return None
+    return {
+        "Datei": datei.name,
+        "Mandant": eintrag["Mandant"],
+        "Lieferant": w["verkaeufer"] or "",
+        "Rechnungsnummer": w["nummer"] or "",
+        "Datum": w["datum"] or "",
+        "Netto": erechnung.betrag_deutsch(w["netto"]),
+        "Steuer": erechnung.betrag_deutsch(w["steuer"]),
+        "Brutto": erechnung.betrag_deutsch(w["brutto"]),
+        "Status": eintrag["Status"],
+    }
+
+
 # ---------------------------------------------------------------------------
 # Hauptablauf
 # ---------------------------------------------------------------------------
@@ -174,6 +195,7 @@ def verarbeite(monat: str) -> dict:
     gesehen = {}        # Prüfsumme -> Dateiname (für Duplikate)
     rechnungen = {}     # (Lieferant, Rechnungsnummer) -> Dateiname (Duplikate bei E-Rechnungen)
     eingegangen = set() # (Mandantennummer, Belegart) im gewählten Monat
+    rechnungsliste = [] # Schritt 5: alle lesbaren E-Rechnungen mit Beträgen (für Excel)
 
     # Textbelege (.txt) und E-Rechnungen (.xml), sortiert nach Dateiname
     alle = list(EINGANG.glob("*.txt")) + list(EINGANG.glob("*.xml"))
@@ -209,6 +231,12 @@ def verarbeite(monat: str) -> dict:
             "Begründung": grund,
         })
 
+        # E-Rechnung? Dann kommt sie mit allen Beträgen auch in die Rechnungsliste
+        if erechnung.ist_e_rechnung(datei):
+            zeile = rechnungszeile(datei, protokoll[-1])
+            if zeile:
+                rechnungsliste.append(zeile)
+
     # Schritt 4: Soll-Ist-Vergleich
     fehlend = []
     for m in mandanten:
@@ -217,8 +245,8 @@ def verarbeite(monat: str) -> dict:
                 fehlend.append({"Mandantennummer": m["nr"], "Mandant": m["name"],
                                 "Monat": monat, "Fehlender Beleg": soll_art})
 
-    return {"monat": monat, "mandanten": mandanten,
-            "protokoll": protokoll, "fehlend": fehlend}
+    return {"monat": monat, "mandanten": mandanten, "protokoll": protokoll,
+            "fehlend": fehlend, "rechnungsliste": rechnungsliste}
 
 
 # ---------------------------------------------------------------------------
@@ -251,6 +279,7 @@ def schreibe_berichte(e: dict) -> None:
     monat, protokoll, fehlend = e["monat"], e["protokoll"], e["fehlend"]
     schreibe_csv(AUSGABE / f"protokoll_{monat}.csv", protokoll)
     schreibe_csv(AUSGABE / f"fehlende_belege_{monat}.csv", fehlend)
+    schreibe_csv(AUSGABE / f"rechnungsliste_{monat}.csv", e["rechnungsliste"])
 
     # Erinnerungs-Entwürfe pro Mandant (werden NICHT automatisch versendet)
     entwuerfe = AUSGABE / "erinnerungs_entwuerfe"
@@ -289,6 +318,7 @@ tr.duplikat td{{background:#eee;color:#666}}
 <p class="hinweis">Fiktive Testdaten · erstellt {datetime.now():%d.%m.%Y %H:%M}</p>
 {kacheln}
 <h2>Fehlende Belege</h2>{tabelle_html(fehlend)}
+<h2>Rechnungsliste: alle E-Rechnungen</h2>{tabelle_html(e["rechnungsliste"])}
 <h2>Alle eingegangenen Belege</h2>{tabelle_html(protokoll)}
 </body></html>"""
     (AUSGABE / f"bericht_{monat}.html").write_text(seite, encoding="utf-8")

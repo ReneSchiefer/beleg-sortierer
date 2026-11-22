@@ -16,12 +16,13 @@ const path = require("path");
   for (const monat of process.argv.slice(2)) {
     await seite.selectOption("#monat", monat); // Monat wählen
     await seite.click("#los");                 // "Belege sortieren" klicken
-    // Jede Tabellenzeile im Protokoll als Liste ihrer Zellen auslesen
-    ergebnis[monat] = await seite.$$eval("#protokoll tr", (zeilen) =>
+    // Jede Tabellenzeile (Protokoll und Rechnungsliste) als Liste ihrer Zellen auslesen
+    const lies = (tabelle) => seite.$$eval(tabelle + " tr", (zeilen) =>
       zeilen
         .map((z) => [...z.querySelectorAll("td")].map((td) => td.innerText.trim()))
         .filter((zellen) => zellen.length > 0)
     );
+    ergebnis[monat] = { protokoll: await lies("#protokoll"), rechnungen: await lies("#rechnungen") };
   }
   console.log(JSON.stringify({ ergebnis, fehler }));
   await browser.close();

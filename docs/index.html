@@ -122,6 +122,11 @@ Datum: 31.10.2026</textarea>
       <div><h3>Zur Prüfung durch einen Menschen</h3><div class="tabelle" id="pruefen"></div></div>
     </div>
 
+    <h3>Rechnungsliste: alle E-Rechnungen</h3>
+    <p class="leise">Die Beträge kommen genau aus der E-Rechnung. Fehlerhafte Rechnungen stehen hier auch, mit Status „Prüfen“.</p>
+    <div class="leiste" style="margin:.2rem 0 .6rem"><button id="csvRechnungen">Rechnungsliste als CSV für Excel</button></div>
+    <div class="tabelle" id="rechnungen"></div>
+
     <h3>Erinnerungs-Entwürfe</h3>
     <p class="leise">Diese Entwürfe verschickt das Tool nicht. Ein Mensch prüft sie und versendet sie selbst.</p>
     <div id="entwuerfe"></div>
@@ -218,6 +223,7 @@ function pruefeERechnung(w){
   if (netto + steuer !== brutto) return `E-Rechnung rechnet nicht: ${w.netto} + ${w.steuer} ist nicht ${w.brutto}`;
   return null;
 }
+const betragDeutsch = t => t ? t.replace(".", ",") : "";   // "595.00" → "595,00" für Excel
 const monatAusDatum = d => (d && d.length === 10 && d[4] === "-" && d[7] === "-") ? d.slice(0, 7) : null;
 
 function entscheideTextbeleg(b){
@@ -246,7 +252,7 @@ function entscheideERechnung(b, rechnungen){
 }
 
 function verarbeite(monat){
-  const protokoll = [], gesehen = new Map(), rechnungen = new Map(), eingegangen = new Set(), ablage = {};
+  const protokoll = [], gesehen = new Map(), rechnungen = new Map(), eingegangen = new Set(), ablage = {}, rechnungsliste = [];
   for (const b of belege.filter(b => b.aktiv).sort((a, c) => a.name < c.name ? -1 : 1)){
     let [mandant, art, bm, status, grund] = istERechnung(b.name) ? entscheideERechnung(b, rechnungen) : entscheideTextbeleg(b);
     if (gesehen.has(b.text)) { status = "Duplikat"; grund = `gleicher Inhalt wie ${gesehen.get(b.text)}`; }
@@ -258,12 +264,18 @@ function verarbeite(monat){
       if (bm === monat) eingegangen.add(mandant.nr + "|" + art);
     }
     protokoll.push({Datei: b.name, Mandant: mandant ? `${mandant.nr} ${mandant.name}` : "", Belegart: art || "", Monat: bm || "", Status: status, "Begründung": grund});
+    if (istERechnung(b.name)){                 // E-Rechnung → auch in die Rechnungsliste
+      const w = leseERechnung(b.text);
+      if (w) rechnungsliste.push({Datei: b.name, Mandant: protokoll.at(-1).Mandant, Lieferant: w.verkaeufer || "",
+        Rechnungsnummer: w.nummer || "", Datum: w.datum || "", Netto: betragDeutsch(w.netto),
+        Steuer: betragDeutsch(w.steuer), Brutto: betragDeutsch(w.brutto), Status: status});
+    }
   }
   const fehlend = [];
   for (const m of DATEN.mandanten)
     for (const s of m.soll)
       if (!eingegangen.has(m.nr + "|" + s)) fehlend.push({Mandantennummer: m.nr, Mandant: m.name, Monat: monat, "Fehlender Beleg": s});
-  return {protokoll, fehlend, ablage};
+  return {protokoll, fehlend, ablage, rechnungsliste};
 }
 
 // ---------- Darstellung ----------
@@ -311,6 +323,7 @@ function auswerten(){
     `<pre class="entwurf">ENTWURF – vor dem Versand von einem Menschen prüfen!\n\nBetreff: Fehlende Unterlagen ${esc(monat)}\n\nGuten Tag,\n\nfür ${esc(name)} fehlen uns für ${esc(monat)} noch:\n${arten.map(a => "  - " + esc(a)).join("\n")}\n\nBitte reichen Sie diese Unterlagen nach. Vielen Dank!</pre>`
   ).join("") || "<p>Keine Erinnerungen nötig, alles vollständig.</p>";
   $("protokoll").innerHTML = tabelle(e.protokoll);
+  $("rechnungen").innerHTML = tabelle(e.rechnungsliste);
 }
 
 // ---------- Bedienung ----------
@@ -345,13 +358,17 @@ $("neuDatei").addEventListener("change", async ev => {
   for (const f of ev.target.files) neuerBeleg(f.name, await f.text());
   ev.target.value = "";
 });
-$("csv").addEventListener("click", () => {
-  if (!letztes) return;
-  const zeilen = letztes.fehlend, kopf = ["Mandantennummer", "Mandant", "Monat", "Fehlender Beleg"];
+function ladeCsv(zeilen, kopf, dateiname){   // Tabelle als CSV-Datei für Excel herunterladen
   const csv = "﻿" + [kopf.join(";"), ...zeilen.map(z => kopf.map(k => z[k]).join(";"))].join("\r\n");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([csv], {type: "text/csv;charset=utf-8"}));
-  a.download = `fehlende_belege_${$("monat").value}.csv`; a.click(); URL.revokeObjectURL(a.href);
+  a.download = dateiname; a.click(); URL.revokeObjectURL(a.href);
+}
+$("csv").addEventListener("click", () => {
+  if (letztes) ladeCsv(letztes.fehlend, ["Mandantennummer", "Mandant", "Monat", "Fehlender Beleg"], `fehlende_belege_${$("monat").value}.csv`);
+});
+$("csvRechnungen").addEventListener("click", () => {
+  if (letztes) ladeCsv(letztes.rechnungsliste, ["Datei", "Mandant", "Lieferant", "Rechnungsnummer", "Datum", "Netto", "Steuer", "Brutto", "Status"], `rechnungsliste_${$("monat").value}.csv`);
 });
 
 // Einstellungen anzeigen
