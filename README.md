@@ -65,3 +65,9 @@ Du brauchst nur Python 3.10 oder neuer. Weitere Pakete sind nicht nötig.
 - Die Erkennung arbeitet mit Stichwörtern. Das ist einfach und nachvollziehbar, aber nicht „intelligent“.
   Neue Mandanten oder Belegarten trägt man in den CSV-Dateien nach.
 - Bei Textbelegen unterscheidet das Tool Eingangs- und Ausgangsrechnungen noch nicht.
+
+## Rechte
+© 2026 René Schiefer – **alle Rechte vorbehalten.**
+Ansehen und Ausprobieren der Demo sind erlaubt. Kopieren, Weitergeben oder Nutzen des Codes – auch in Teilen
+oder abgewandelt – nur mit meiner vorherigen schriftlichen Erlaubnis.
+Dieses Projekt steht ausdrücklich **nicht** unter einer Open-Source-Lizenz.
